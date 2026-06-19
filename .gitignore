@@ -1,0 +1,8 @@
+node_modules/
+dist/
+userdata/
+.electron-cache/
+*.log
+elog.txt
+main-loaded.txt
+screenshot.png
