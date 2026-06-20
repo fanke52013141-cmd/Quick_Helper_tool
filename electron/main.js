@@ -312,7 +312,16 @@ function openSafeExternal(url) {
   return shell.openExternal(String(url).trim())
 }
 
-function runPs(action, keys = '') {
+// 读取 BrowserWindow 的原生 HWND（Windows 上 HWND 实际值可用 UInt32 表示）
+function getWinHwnd(win) {
+  if (!win || win.isDestroyed()) return 0
+  try {
+    const buf = win.getNativeWindowHandle()
+    return buf.readUInt32LE(0)
+  } catch { return 0 }
+}
+
+function runPs(action, keys = '', ownerHwnd = 0) {
   return new Promise((resolve, reject) => {
     const allowedActions = new Set(['press', 'down', 'up', 'paste', 'enter', 'click', 'doubleClick'])
     if (!allowedActions.has(action)) {
@@ -331,6 +340,8 @@ function runPs(action, keys = '') {
       action,
     ]
     if (keys) args.push('-keys', String(keys))
+    // 把 Electron 窗口 HWND 传给 PS，让其在找目标窗口时跳过自己
+    if (ownerHwnd) args.push('-ownerHwnd', String(ownerHwnd))
 
     execFile('powershell.exe', args, { timeout: 5000 }, (err, stdout, stderr) => {
       if (stdout) log(`PowerShell ${action} stdout: ${stdout.trim()}`)
@@ -465,16 +476,19 @@ ipcMain.handle('action:click', () => runPs('click'))
 ipcMain.handle('action:doubleClick', () => runPs('doubleClick'))
 async function runWithoutToolFocus(event, action) {
   const win = BrowserWindow.fromWebContents(event.sender)
-  const shouldYieldFocus = win && !win.isDestroyed()
-  if (shouldYieldFocus) {
+  const ownerHwnd = win && !win.isDestroyed() ? getWinHwnd(win) : 0
+
+  // 注意：不再调用 win.blur()。
+  // win.blur() 在 Windows 上只会把焦点发给「桌面」而非记事本等目标应用，
+  // 焦点还原的工作交给 keyboard.ps1 里的 Restore-TargetFocus（SetForegroundWindow）来完成。
+  if (win && !win.isDestroyed()) {
     win.setFocusable(false)
-    win.blur()
   }
-  await new Promise(r => setTimeout(r, 300)) // 给 Windows 足够时间将焦点交还给目标应用
+  await new Promise(r => setTimeout(r, 80)) // 等 Electron 完成 setFocusable 后再继续
   try {
-    return await action()
+    return await action(ownerHwnd)
   } finally {
-    if (shouldYieldFocus && win && !win.isDestroyed()) {
+    if (win && !win.isDestroyed()) {
       setTimeout(() => {
         if (!win.isDestroyed()) win.setFocusable(true)
       }, 300)
@@ -482,16 +496,17 @@ async function runWithoutToolFocus(event, action) {
   }
 }
 
-ipcMain.handle('action:shortcut', (event, keys) => runWithoutToolFocus(event, () => runPs('press', keys)))
+ipcMain.handle('action:shortcut', (event, keys) =>
+  runWithoutToolFocus(event, (hwnd) => runPs('press', keys, hwnd)))
 ipcMain.handle('action:holdDown', async (event, keys) => {
   await releaseHeldKeys()
-  await runWithoutToolFocus(event, () => runPs('down', keys))
+  await runWithoutToolFocus(event, (hwnd) => runPs('down', keys, hwnd))
   heldKeys = String(keys || '')
 })
 ipcMain.handle('action:holdUp', async (event, keys) => {
   const releaseKeys = keys || heldKeys
   heldKeys = null
-  if (releaseKeys) await runWithoutToolFocus(event, () => runPs('up', releaseKeys))
+  if (releaseKeys) await runWithoutToolFocus(event, (hwnd) => runPs('up', releaseKeys, hwnd))
 })
 
 ipcMain.handle('window:minimize', (event) => {
