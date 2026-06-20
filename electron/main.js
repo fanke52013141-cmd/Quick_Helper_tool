@@ -11,6 +11,7 @@ let dialogWindow = null
 let dialogResolve = null
 const floatingWindows = new Map()
 const boundsTimers = new Map()
+let lastMainBounds = null
 let heldKeys = null
 
 app.setPath('userData', path.join(__dirname, '..', 'userdata'))
@@ -102,7 +103,23 @@ function safeBounds(bounds, defaults) {
   const result = { width, height }
   if (Number.isFinite(bounds?.x)) result.x = Math.round(bounds.x)
   if (Number.isFinite(bounds?.y)) result.y = Math.round(bounds.y)
-  return result
+  return keepBoundsInWorkArea(result)
+}
+
+function keepBoundsInWorkArea(bounds) {
+  const display = Number.isFinite(bounds.x) && Number.isFinite(bounds.y)
+    ? screen.getDisplayNearestPoint({ x: bounds.x, y: bounds.y })
+    : screen.getPrimaryDisplay()
+  const workArea = display.workArea
+  const width = bounds.width
+  const height = bounds.height
+  const maxX = workArea.x + workArea.width - width
+  const maxY = workArea.y + workArea.height - height
+  return {
+    ...bounds,
+    x: Number.isFinite(bounds.x) ? Math.min(Math.max(bounds.x, workArea.x), Math.max(workArea.x, maxX)) : bounds.x,
+    y: Number.isFinite(bounds.y) ? Math.min(Math.max(bounds.y, workArea.y), Math.max(workArea.y, maxY)) : bounds.y,
+  }
 }
 
 function defaultFloatingBounds(width, height) {
@@ -116,12 +133,15 @@ function defaultFloatingBounds(width, height) {
 }
 
 function saveMainBoundsDebounced() {
-  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isMinimized()) return
   clearTimeout(boundsTimers.get('main'))
   boundsTimers.set('main', setTimeout(() => {
-    if (!mainWindow || mainWindow.isDestroyed()) return
+    if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isMinimized()) return
+    const bounds = mainWindow.getBounds()
+    if (bounds.width < 120 || bounds.height < 50) return
+    lastMainBounds = keepBoundsInWorkArea(bounds)
     const config = getConfig()
-    config.window = { ...config.window, ...mainWindow.getBounds() }
+    config.window = { ...config.window, ...lastMainBounds }
     saveConfig(config)
     broadcastConfigChanged()
   }, 400))
@@ -151,10 +171,12 @@ function createWindow() {
   const config = getConfig()
   const winConfig = config.window || {}
 
+  lastMainBounds = safeBounds(winConfig, { width: 330, height: 360 })
   mainWindow = new BrowserWindow({
-    ...safeBounds(winConfig, { width: 330, height: 360 }),
+    ...lastMainBounds,
     frame: false,
     transparent: false,
+    backgroundColor: '#FDFDFD',
     resizable: true,
     alwaysOnTop: winConfig.alwaysOnTop || false,
     skipTaskbar: false,
@@ -173,9 +195,12 @@ function createWindow() {
     log(`[RENDERER] ${message} (${sourceId}:${line})`)
   })
 
-  mainWindow.setMinimumSize(200, 42)
+  mainWindow.setMinimumSize(200, 50)
   mainWindow.on('resize', saveMainBoundsDebounced)
   mainWindow.on('move', saveMainBoundsDebounced)
+  mainWindow.on('restore', () => {
+    if (lastMainBounds) mainWindow.setBounds(keepBoundsInWorkArea(lastMainBounds))
+  })
   mainWindow.on('closed', () => { mainWindow = null })
 }
 
@@ -438,16 +463,35 @@ ipcMain.handle('action:text', async (_, text, autoEnter) => {
 
 ipcMain.handle('action:click', () => runPs('click'))
 ipcMain.handle('action:doubleClick', () => runPs('doubleClick'))
-ipcMain.handle('action:shortcut', (_, keys) => runPs('press', keys))
-ipcMain.handle('action:holdDown', async (_, keys) => {
+async function runWithoutToolFocus(event, action) {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  const shouldYieldFocus = win && !win.isDestroyed()
+  if (shouldYieldFocus) {
+    win.setFocusable(false)
+    win.blur()
+  }
+  await new Promise(r => setTimeout(r, 300)) // 给 Windows 足够时间将焦点交还给目标应用
+  try {
+    return await action()
+  } finally {
+    if (shouldYieldFocus && win && !win.isDestroyed()) {
+      setTimeout(() => {
+        if (!win.isDestroyed()) win.setFocusable(true)
+      }, 300)
+    }
+  }
+}
+
+ipcMain.handle('action:shortcut', (event, keys) => runWithoutToolFocus(event, () => runPs('press', keys)))
+ipcMain.handle('action:holdDown', async (event, keys) => {
   await releaseHeldKeys()
-  await runPs('down', keys)
+  await runWithoutToolFocus(event, () => runPs('down', keys))
   heldKeys = String(keys || '')
 })
-ipcMain.handle('action:holdUp', async (_, keys) => {
+ipcMain.handle('action:holdUp', async (event, keys) => {
   const releaseKeys = keys || heldKeys
   heldKeys = null
-  if (releaseKeys) await runPs('up', releaseKeys)
+  if (releaseKeys) await runWithoutToolFocus(event, () => runPs('up', releaseKeys))
 })
 
 ipcMain.handle('window:minimize', (event) => {
@@ -481,9 +525,13 @@ ipcMain.handle('window:collapse', (event, collapsed) => {
   const bounds = win.getBounds()
   if (collapsed) {
     win._savedHeight = bounds.height > 80 ? bounds.height : (win._savedHeight || 360)
-    win.setBounds({ x: bounds.x, y: bounds.y, width: bounds.width, height: 42 })
+    const nextBounds = keepBoundsInWorkArea({ x: bounds.x, y: bounds.y, width: bounds.width, height: 50 })
+    win.setBounds(nextBounds)
+    if (win === mainWindow) lastMainBounds = { ...nextBounds, height: win._savedHeight }
   } else {
-    win.setBounds({ x: bounds.x, y: bounds.y, width: bounds.width, height: win._savedHeight || 360 })
+    const nextBounds = keepBoundsInWorkArea({ x: bounds.x, y: bounds.y, width: bounds.width, height: win._savedHeight || 360 })
+    win.setBounds(nextBounds)
+    if (win === mainWindow) lastMainBounds = nextBounds
   }
 })
 
