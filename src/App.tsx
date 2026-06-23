@@ -16,8 +16,22 @@ import FloatingItemView from './components/FloatingItemView'
 import type { AppConfig, GridItem, ButtonType, LinkRef, TodoGroup, CardSize } from './types'
 import { DEFAULT_CONFIG, genId } from './types'
 
+function isHoldButton(item: GridItem): item is Extract<GridItem, { type: 'button' }> {
+  return item.type === 'button' && item.buttonType === 'hold'
+}
+
 // ======================== 可排序卡片包装 ========================
-function SortableCard(props: { item: GridItem; isHolding: boolean; onClick: () => void; onContextMenu: (e: React.MouseEvent) => void }) {
+function SortableCard(props: {
+  item: GridItem
+  isHolding: boolean
+  timerRemaining?: number
+  onClick: () => void
+  onContextMenu: (e: React.MouseEvent) => void
+  onPointerDown?: (e: React.PointerEvent) => void
+  onPointerUp?: (e: React.PointerEvent) => void
+  onPointerLeave?: (e: React.PointerEvent) => void
+  onPointerCancel?: (e: React.PointerEvent) => void
+}) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.item.id })
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -26,7 +40,17 @@ function SortableCard(props: { item: GridItem; isHolding: boolean; onClick: () =
   }
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <Card item={props.item} isHolding={props.isHolding} onClick={props.onClick} onContextMenu={props.onContextMenu} />
+      <Card
+        item={props.item}
+        isHolding={props.isHolding}
+        timerRemaining={props.timerRemaining}
+        onClick={props.onClick}
+        onContextMenu={props.onContextMenu}
+        onPointerDown={props.onPointerDown}
+        onPointerUp={props.onPointerUp}
+        onPointerLeave={props.onPointerLeave}
+        onPointerCancel={props.onPointerCancel}
+      />
     </div>
   )
 }
@@ -46,6 +70,8 @@ export default function App() {
   const toastTimer = useRef<number | null>(null)
   const applyingRemoteConfig = useRef(false)
   const lastPointer = useRef({ x: 0, y: 0 })
+  const holdingIdRef = useRef<string | null>(null)
+  const heldContentRef = useRef<string | null>(null)
   const params = new URLSearchParams(window.location.search)
   const appMode = params.get('mode')
   const isFloatingMode = appMode === 'floating'
@@ -113,7 +139,6 @@ export default function App() {
     return () => window.removeEventListener('pointermove', updatePointer, true)
   }, [])
 
-
   useEffect(() => {
     const off = window.api.onConfigChanged?.((nextConfig: AppConfig) => {
       applyingRemoteConfig.current = true
@@ -142,6 +167,75 @@ export default function App() {
     setToast(msg)
     if (toastTimer.current) clearTimeout(toastTimer.current)
     toastTimer.current = window.setTimeout(() => setToast(null), 2000)
+  }, [])
+
+  const setActiveHolding = useCallback((id: string | null, content: string | null = null) => {
+    holdingIdRef.current = id
+    heldContentRef.current = content
+    setHoldingId(id)
+  }, [])
+
+  const releaseHold = useCallback(async (id?: string) => {
+    const activeId = id || holdingIdRef.current
+    const activeContent = heldContentRef.current
+    if (!activeId || !activeContent) return
+
+    setActiveHolding(null)
+    await window.api.holdUp(activeContent)
+  }, [setActiveHolding])
+
+  const pressHold = useCallback(async (item: Extract<GridItem, { type: 'button' }>) => {
+    if (deleteMode) return
+    if (holdingIdRef.current === item.id) return
+
+    if (holdingIdRef.current) {
+      await releaseHold(holdingIdRef.current)
+    }
+
+    await window.api.holdDown(item.content)
+    setActiveHolding(item.id, item.content)
+  }, [deleteMode, releaseHold, setActiveHolding])
+
+  const handleHoldPointerDown = (e: React.PointerEvent, item: GridItem) => {
+    if (!isHoldButton(item) || e.button !== 0 || deleteMode) return
+    e.preventDefault()
+    e.stopPropagation()
+    pressHold(item)
+      .then(() => showToast(`按下：${item.title}`))
+      .catch((error) => {
+        showToast('长按失败')
+        console.error(error)
+      })
+  }
+
+  const handleHoldPointerUp = (e: React.PointerEvent, item: GridItem) => {
+    if (!isHoldButton(item) || holdingIdRef.current !== item.id) return
+    e.preventDefault()
+    e.stopPropagation()
+    releaseHold(item.id)
+      .then(() => showToast(`释放：${item.title}`))
+      .catch((error) => {
+        showToast('释放失败')
+        console.error(error)
+      })
+  }
+
+  useEffect(() => {
+    const activeId = holdingIdRef.current
+    if (activeId && !config.items.some(item => item.id === activeId)) {
+      releaseHold(activeId).catch(console.error)
+    }
+  }, [config.items, releaseHold])
+
+  // 应用退出时释放长按
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (heldContentRef.current) {
+        window.api.holdUp(heldContentRef.current)
+      }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [])
 
   // ======================== 窗口操作 ========================
@@ -333,6 +427,9 @@ export default function App() {
     }
     if (!confirm(`确定删除选中的 ${selectedIds.length} 个项目吗？`)) return
     const selectedSet = new Set(selectedIds)
+    if (holdingIdRef.current && selectedSet.has(holdingIdRef.current)) {
+      releaseHold(holdingIdRef.current).catch(console.error)
+    }
     saveConfig({
       ...config,
       items: config.items.filter(item => !selectedSet.has(item.id)),
@@ -346,6 +443,9 @@ export default function App() {
     const item = config.items.find(it => it.id === id)
     if (!item) return
     if (!confirm(`确定删除「${item.title}」？`)) return
+    if (holdingIdRef.current === id) {
+      releaseHold(id).catch(console.error)
+    }
     const newConfig = {
       ...config,
       items: config.items.filter(it => it.id !== id),
@@ -361,6 +461,9 @@ export default function App() {
       return
     }
     if (!confirm(`确定删除当前面板的全部 ${config.items.length} 个项目吗？`)) return
+    if (holdingIdRef.current) {
+      releaseHold(holdingIdRef.current).catch(console.error)
+    }
     saveConfig({ ...config, items: [], floatingItems: [] })
     showToast('已清空面板')
   }
@@ -371,6 +474,8 @@ export default function App() {
       toggleSelected(item.id)
       return
     }
+    if (isHoldButton(item)) return
+
     try {
       if (item.type === 'link') {
         await window.api.openLink(item.url)
@@ -441,40 +546,8 @@ export default function App() {
       showToast(`执行：${item.content}`)
     } else if (item.buttonType === 'timer') {
       runTimerButton(item)
-    } else if (item.buttonType === 'hold') {
-      if (holdingId === item.id) {
-        await window.api.holdUp(item.content)
-        setHoldingId(null)
-        showToast(`释放：${item.title}`)
-      } else {
-        if (holdingId) {
-          // 释放之前的长按
-          const prev = config.items.find(it => it.id === holdingId)
-          if (prev && prev.type === 'button') {
-            await window.api.holdUp(prev.content)
-          }
-        }
-        await window.api.holdDown(item.content)
-        setHoldingId(item.id)
-        showToast(`按下：${item.title}`)
-      }
     }
   }
-
-  // 应用退出时释放长按
-  useEffect(() => {
-    const handleBeforeUnload = () => {
-      if (holdingId) {
-        const item = config.items.find(it => it.id === holdingId)
-        if (item && item.type === 'button') {
-          // 同步释放（同步 XMLHttpRequest 或直接调用）
-          window.api.holdUp(item.content)
-        }
-      }
-    }
-    window.addEventListener('beforeunload', handleBeforeUnload)
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
-  }, [holdingId, config.items])
 
   // ======================== 拖拽排序 ========================
   const handleDragEnd = (e: DragEndEvent) => {
@@ -511,6 +584,9 @@ export default function App() {
     if (!imported.items) {
       showToast('配置格式错误')
       return
+    }
+    if (holdingIdRef.current) {
+      releaseHold(holdingIdRef.current).catch(console.error)
     }
     // 询问合并还是替换
     const replace = confirm('点击"确定"替换全部配置，点击"取消"合并到现有配置')
@@ -638,6 +714,10 @@ export default function App() {
                         timerRemaining={timerEnds[item.id] ? Math.max(0, Math.ceil((timerEnds[item.id] - nowTick) / 1000)) : undefined}
                         onClick={() => handleCardClick(item)}
                         onContextMenu={(e) => showCardMenu(e, item)}
+                        onPointerDown={(e) => handleHoldPointerDown(e, item)}
+                        onPointerUp={(e) => handleHoldPointerUp(e, item)}
+                        onPointerLeave={(e) => handleHoldPointerUp(e, item)}
+                        onPointerCancel={(e) => handleHoldPointerUp(e, item)}
                       />
                     </div>
                   ))}
@@ -649,7 +729,6 @@ export default function App() {
         </div>
       )}
 
-      {/* 右键菜单 */}
       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}
@@ -659,8 +738,6 @@ export default function App() {
         />
       )}
 
-
-      {/* Toast */}
       {toast && <div className="toast">{toast}</div>}
     </div>
   )
