@@ -7,6 +7,10 @@ interface Props {
   timerRemaining?: number
   onClick: () => void
   onContextMenu: (e: React.MouseEvent) => void
+  onPointerDown?: (e: React.PointerEvent) => void
+  onPointerUp?: (e: React.PointerEvent) => void
+  onPointerLeave?: (e: React.PointerEvent) => void
+  onPointerCancel?: (e: React.PointerEvent) => void
 }
 
 function formatTimer(seconds: number) {
@@ -42,7 +46,17 @@ function getItemIcon(item: GridItem) {
   }
 }
 
-export default function Card({ item, isHolding, timerRemaining, onClick, onContextMenu }: Props) {
+export default function Card({
+  item,
+  isHolding,
+  timerRemaining,
+  onClick,
+  onContextMenu,
+  onPointerDown,
+  onPointerUp,
+  onPointerLeave,
+  onPointerCancel,
+}: Props) {
   const configuredTimer = getTimerSeconds(item)
   const timerToShow = typeof timerRemaining === 'number' ? timerRemaining : configuredTimer
 
@@ -51,6 +65,10 @@ export default function Card({ item, isHolding, timerRemaining, onClick, onConte
       className={`card ${isHolding ? 'hold-active' : ''}`}
       onClick={onClick}
       onContextMenu={onContextMenu}
+      onPointerDown={onPointerDown}
+      onPointerUp={onPointerUp}
+      onPointerLeave={onPointerLeave}
+      onPointerCancel={onPointerCancel}
       title={item.title}
     >
       {typeof timerToShow === 'number' && timerToShow > 99 && <div className="timer-dot" />}
