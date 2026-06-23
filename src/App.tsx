@@ -72,6 +72,7 @@ export default function App() {
   const lastPointer = useRef({ x: 0, y: 0 })
   const holdingIdRef = useRef<string | null>(null)
   const heldContentRef = useRef<string | null>(null)
+  const holdPendingRef = useRef<Promise<void> | null>(null)
   const params = new URLSearchParams(window.location.search)
   const appMode = params.get('mode')
   const isFloatingMode = appMode === 'floating'
@@ -180,6 +181,11 @@ export default function App() {
     const activeContent = heldContentRef.current
     if (!activeId || !activeContent) return
 
+    const pendingHold = holdPendingRef.current
+    if (pendingHold) {
+      try { await pendingHold } catch {}
+    }
+
     setActiveHolding(null)
     await window.api.holdUp(activeContent)
   }, [setActiveHolding])
@@ -192,8 +198,18 @@ export default function App() {
       await releaseHold(holdingIdRef.current)
     }
 
-    await window.api.holdDown(item.content)
     setActiveHolding(item.id, item.content)
+    const pendingHold = window.api.holdDown(item.content)
+    holdPendingRef.current = pendingHold
+
+    try {
+      await pendingHold
+    } catch (error) {
+      if (holdingIdRef.current === item.id) setActiveHolding(null)
+      throw error
+    } finally {
+      if (holdPendingRef.current === pendingHold) holdPendingRef.current = null
+    }
   }, [deleteMode, releaseHold, setActiveHolding])
 
   const handleHoldPointerDown = (e: React.PointerEvent, item: GridItem) => {
@@ -201,7 +217,9 @@ export default function App() {
     e.preventDefault()
     e.stopPropagation()
     pressHold(item)
-      .then(() => showToast(`按下：${item.title}`))
+      .then(() => {
+        if (holdingIdRef.current === item.id) showToast(`按下：${item.title}`)
+      })
       .catch((error) => {
         showToast('长按失败')
         console.error(error)
