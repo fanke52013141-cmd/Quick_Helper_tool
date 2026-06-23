@@ -21,6 +21,7 @@ export default function FloatingItemView({ config, floatingId, onConfigChange, o
   const [nowTick, setNowTick] = useState(Date.now())
   const holdingRef = useRef(false)
   const heldContentRef = useRef<string | null>(null)
+  const holdPendingRef = useRef<Promise<void> | null>(null)
   const floating = config.floatingItems.find(item => item.id === floatingId)
   const item = floating ? config.items.find(it => it.id === floating.itemId) : null
 
@@ -53,6 +54,10 @@ export default function FloatingItemView({ config, floatingId, onConfigChange, o
   const releaseHold = async () => {
     if (!holdingRef.current || !heldContentRef.current) return
     const keys = heldContentRef.current
+    const pendingHold = holdPendingRef.current
+    if (pendingHold) {
+      try { await pendingHold } catch {}
+    }
     holdingRef.current = false
     heldContentRef.current = null
     setHolding(false)
@@ -61,10 +66,22 @@ export default function FloatingItemView({ config, floatingId, onConfigChange, o
 
   const pressHold = async () => {
     if (!isHoldButton(item) || holdingRef.current) return
-    await window.api.holdDown(item.content)
     holdingRef.current = true
     heldContentRef.current = item.content
     setHolding(true)
+
+    const pendingHold = window.api.holdDown(item.content)
+    holdPendingRef.current = pendingHold
+    try {
+      await pendingHold
+    } catch (error) {
+      holdingRef.current = false
+      heldContentRef.current = null
+      setHolding(false)
+      throw error
+    } finally {
+      if (holdPendingRef.current === pendingHold) holdPendingRef.current = null
+    }
   }
 
   const handleHoldPointerDown = (event: React.PointerEvent) => {
