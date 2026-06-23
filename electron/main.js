@@ -211,7 +211,7 @@ function createFloatingWindow(floatingItem) {
   const existing = floatingWindows.get(floatingItem.id)
   if (existing && !existing.isDestroyed()) {
     existing.show()
-    existing.focus()
+    if (isTodo) existing.focus()
     return existing
   }
 
@@ -312,13 +312,68 @@ function openSafeExternal(url) {
   return shell.openExternal(String(url).trim())
 }
 
-// 读取 BrowserWindow 的原生 HWND（Windows 上 HWND 实际值可用 UInt32 表示）
 function getWinHwnd(win) {
   if (!win || win.isDestroyed()) return 0
   try {
     const buf = win.getNativeWindowHandle()
     return buf.readUInt32LE(0)
   } catch { return 0 }
+}
+
+const supportedShortcutKeys = new Set([
+  'ctrl', 'control', 'leftctrl', 'rightctrl',
+  'shift', 'leftshift', 'rightshift',
+  'alt', 'leftalt', 'rightalt', 'option',
+  'win', 'leftwin', 'rightwin', 'meta', 'cmd', 'command',
+  'enter', 'return', 'tab', 'esc', 'escape', 'space',
+  'backspace', 'delete', 'del', 'insert', 'home', 'end', 'pageup', 'pagedown',
+  'up', 'arrowup', 'down', 'arrowdown', 'left', 'arrowleft', 'right', 'arrowright',
+  'capslock', 'plus', '=', 'minus', '-', 'comma', ',', 'period', '.', 'slash', '/',
+  'backquote', '`', 'semicolon', ';', 'quote', "'", 'bracketleft', '[',
+  'bracketright', ']', 'backslash', '\\',
+])
+for (let i = 65; i <= 90; i++) supportedShortcutKeys.add(String.fromCharCode(i).toLowerCase())
+for (let i = 0; i <= 9; i++) supportedShortcutKeys.add(String(i))
+for (let i = 1; i <= 24; i++) supportedShortcutKeys.add(`f${i}`)
+
+function normalizeShortcutKey(key) {
+  const normalized = String(key || '').toLowerCase().trim()
+  const aliases = {
+    control: 'ctrl',
+    meta: 'win',
+    cmd: 'win',
+    command: 'win',
+    option: 'alt',
+    escape: 'esc',
+    return: 'enter',
+    del: 'delete',
+    arrowup: 'up',
+    arrowdown: 'down',
+    arrowleft: 'left',
+    arrowright: 'right',
+    '=': 'plus',
+  }
+  return aliases[normalized] || normalized
+}
+
+function normalizeShortcutInput(keys) {
+  const raw = String(keys ?? '')
+  if (raw.length > 0 && raw.trim() === '') return 'space'
+
+  const text = raw.trim().toLowerCase()
+  if (!text) throw new Error('快捷键不能为空')
+  if (text === '+') return 'plus'
+
+  const parts = text.split('+').map(part => part.trim()).filter(Boolean)
+  if (parts.length === 0) throw new Error('快捷键不能为空')
+
+  const normalizedParts = parts.map(part => {
+    if (!supportedShortcutKeys.has(part)) throw new Error(`不支持的按键: ${part}`)
+    return normalizeShortcutKey(part)
+  })
+
+  if (normalizedParts.length === 0) throw new Error('快捷键不能为空')
+  return normalizedParts.join('+')
 }
 
 function runPs(action, keys = '', ownerHwnd = 0) {
@@ -340,7 +395,6 @@ function runPs(action, keys = '', ownerHwnd = 0) {
       action,
     ]
     if (keys) args.push('-keys', String(keys))
-    // 把 Electron 窗口 HWND 传给 PS，让其在找目标窗口时跳过自己
     if (ownerHwnd) args.push('-ownerHwnd', String(ownerHwnd))
 
     execFile('powershell.exe', args, { timeout: 5000 }, (err, stdout, stderr) => {
@@ -361,6 +415,33 @@ async function releaseHeldKeys() {
   const keys = heldKeys
   heldKeys = null
   try { await runPs('up', keys) } catch (e) { log(`releaseHeldKeys failed: ${e.message}`) }
+}
+
+async function runWithoutToolFocus(event, action) {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  const ownerHwnd = win && !win.isDestroyed() ? getWinHwnd(win) : 0
+  let previousFocusable = true
+
+  if (win && !win.isDestroyed()) {
+    try {
+      previousFocusable = typeof win.isFocusable === 'function' ? win.isFocusable() : true
+    } catch {
+      previousFocusable = true
+    }
+    win.setFocusable(false)
+  }
+
+  await new Promise(r => setTimeout(r, 80))
+
+  try {
+    return await action(ownerHwnd)
+  } finally {
+    if (win && !win.isDestroyed()) {
+      setTimeout(() => {
+        if (!win.isDestroyed()) win.setFocusable(previousFocusable)
+      }, 300)
+    }
+  }
 }
 
 const gotLock = app.requestSingleInstanceLock()
@@ -462,49 +543,31 @@ ipcMain.handle('link:openBatch', async (_, urls) => {
   }
 })
 
-ipcMain.handle('action:text', async (_, text, autoEnter) => {
-  clipboard.writeText(String(text || ''))
-  await new Promise(r => setTimeout(r, 50))
-  await runPs('paste')
-  if (autoEnter) {
-    await new Promise(r => setTimeout(r, 80))
-    await runPs('enter')
-  }
-})
+ipcMain.handle('action:text', (event, text, autoEnter) =>
+  runWithoutToolFocus(event, async (hwnd) => {
+    clipboard.writeText(String(text || ''))
+    await new Promise(r => setTimeout(r, 50))
+    await runPs('press', 'ctrl+v', hwnd)
+    if (autoEnter) {
+      await new Promise(r => setTimeout(r, 80))
+      await runPs('press', 'enter', hwnd)
+    }
+  }))
 
 ipcMain.handle('action:click', () => runPs('click'))
 ipcMain.handle('action:doubleClick', () => runPs('doubleClick'))
-async function runWithoutToolFocus(event, action) {
-  const win = BrowserWindow.fromWebContents(event.sender)
-  const ownerHwnd = win && !win.isDestroyed() ? getWinHwnd(win) : 0
-
-  // 注意：不再调用 win.blur()。
-  // win.blur() 在 Windows 上只会把焦点发给「桌面」而非记事本等目标应用，
-  // 焦点还原的工作交给 keyboard.ps1 里的 Restore-TargetFocus（SetForegroundWindow）来完成。
-  if (win && !win.isDestroyed()) {
-    win.setFocusable(false)
-  }
-  await new Promise(r => setTimeout(r, 80)) // 等 Electron 完成 setFocusable 后再继续
-  try {
-    return await action(ownerHwnd)
-  } finally {
-    if (win && !win.isDestroyed()) {
-      setTimeout(() => {
-        if (!win.isDestroyed()) win.setFocusable(true)
-      }, 300)
-    }
-  }
-}
-
-ipcMain.handle('action:shortcut', (event, keys) =>
-  runWithoutToolFocus(event, (hwnd) => runPs('press', keys, hwnd)))
+ipcMain.handle('action:shortcut', (event, keys) => {
+  const shortcut = normalizeShortcutInput(keys)
+  return runWithoutToolFocus(event, (hwnd) => runPs('press', shortcut, hwnd))
+})
 ipcMain.handle('action:holdDown', async (event, keys) => {
+  const shortcut = normalizeShortcutInput(keys)
   await releaseHeldKeys()
-  await runWithoutToolFocus(event, (hwnd) => runPs('down', keys, hwnd))
-  heldKeys = String(keys || '')
+  await runWithoutToolFocus(event, (hwnd) => runPs('down', shortcut, hwnd))
+  heldKeys = shortcut
 })
 ipcMain.handle('action:holdUp', async (event, keys) => {
-  const releaseKeys = keys || heldKeys
+  const releaseKeys = keys ? normalizeShortcutInput(keys) : heldKeys
   heldKeys = null
   if (releaseKeys) await runWithoutToolFocus(event, (hwnd) => runPs('up', releaseKeys, hwnd))
 })
@@ -521,7 +584,6 @@ ipcMain.handle('window:setAlwaysOnTop', (event, val) => {
   const win = BrowserWindow.fromWebContents(event.sender)
   if (win) win.setAlwaysOnTop(!!val)
 })
-
 ipcMain.handle('window:setFocusable', (event, val) => {
   const win = BrowserWindow.fromWebContents(event.sender)
   if (win) win.setFocusable(!!val)
