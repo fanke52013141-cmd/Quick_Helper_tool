@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp, X } from 'lucide-react'
 import Card from './Card'
 import type { AppConfig, GridItem } from '../types'
@@ -10,11 +10,17 @@ interface Props {
   onClose: () => void
 }
 
+function isHoldButton(item: GridItem | null): item is Extract<GridItem, { type: 'button' }> {
+  return !!item && item.type === 'button' && item.buttonType === 'hold'
+}
+
 export default function FloatingItemView({ config, floatingId, onConfigChange, onClose }: Props) {
   const [holding, setHolding] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const [timerEnd, setTimerEnd] = useState<number | null>(null)
   const [nowTick, setNowTick] = useState(Date.now())
+  const holdingRef = useRef(false)
+  const heldContentRef = useRef<string | null>(null)
   const floating = config.floatingItems.find(item => item.id === floatingId)
   const item = floating ? config.items.find(it => it.id === floating.itemId) : null
 
@@ -36,14 +42,47 @@ export default function FloatingItemView({ config, floatingId, onConfigChange, o
 
   useEffect(() => {
     return () => {
-      if (holding && item?.type === 'button' && item.buttonType === 'hold') {
-        window.api.holdUp(item.content)
+      if (holdingRef.current && heldContentRef.current) {
+        window.api.holdUp(heldContentRef.current)
+        holdingRef.current = false
+        heldContentRef.current = null
       }
     }
-  }, [holding, item])
+  }, [])
+
+  const releaseHold = async () => {
+    if (!holdingRef.current || !heldContentRef.current) return
+    const keys = heldContentRef.current
+    holdingRef.current = false
+    heldContentRef.current = null
+    setHolding(false)
+    await window.api.holdUp(keys)
+  }
+
+  const pressHold = async () => {
+    if (!isHoldButton(item) || holdingRef.current) return
+    await window.api.holdDown(item.content)
+    holdingRef.current = true
+    heldContentRef.current = item.content
+    setHolding(true)
+  }
+
+  const handleHoldPointerDown = (event: React.PointerEvent) => {
+    if (!isHoldButton(item) || event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    pressHold().catch(console.error)
+  }
+
+  const handleHoldPointerUp = (event: React.PointerEvent) => {
+    if (!isHoldButton(item)) return
+    event.preventDefault()
+    event.stopPropagation()
+    releaseHold().catch(console.error)
+  }
 
   const runItem = async () => {
-    if (!item) return
+    if (!item || isHoldButton(item)) return
     if (item.type === 'link') {
       await window.api.openLink(item.url)
     } else if (item.type === 'folder') {
@@ -74,12 +113,6 @@ export default function FloatingItemView({ config, floatingId, onConfigChange, o
             action === 'doubleClick' ? window.api.doubleClick() : window.api.click()
           }, delay)
         }
-      } else if (holding) {
-        await window.api.holdUp(item.content)
-        setHolding(false)
-      } else {
-        await window.api.holdDown(item.content)
-        setHolding(true)
       }
     }
   }
@@ -120,6 +153,10 @@ export default function FloatingItemView({ config, floatingId, onConfigChange, o
           timerRemaining={timerEnd ? Math.max(0, Math.ceil((timerEnd - nowTick) / 1000)) : undefined}
           onClick={runItem}
           onContextMenu={(event) => event.preventDefault()}
+          onPointerDown={handleHoldPointerDown}
+          onPointerUp={handleHoldPointerUp}
+          onPointerLeave={handleHoldPointerUp}
+          onPointerCancel={handleHoldPointerUp}
         />
       </div>
     )
