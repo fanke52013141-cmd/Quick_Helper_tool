@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>设置定时提醒</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; }
+  body { background: transparent; -webkit-user-select: none; user-select: none; }
+  .shell {
+    width: 100%; height: 100%;
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px 10px;
+    border-bottom: 1px solid #f0f0f0;
+  }
+  .header .title { font-size: 14px; font-weight: 600; color: #1f2937; display: flex; align-items: center; gap: 8px; }
+  .header .title svg { color: #EC4899; }
+  .close-btn {
+    width: 24px; height: 24px; border: none; background: transparent;
+    cursor: pointer; border-radius: 6px; display: flex; align-items: center; justify-content: center;
+    color: #9ca3af;
+  }
+  .close-btn:hover { background: #f3f4f6; color: #6b7280; }
+  .body { padding: 14px 18px; flex: 1; display: flex; flex-direction: column; gap: 12px; overflow: auto; }
+  .field-label { font-size: 12px; color: #6b7280; margin-bottom: 4px; }
+  .text-input {
+    width: 100%; height: 36px; padding: 7px 10px;
+    border: 1px solid #e5e7eb; border-radius: 8px;
+    font-size: 13px; color: #1f2937; background: #fff;
+    outline: none; transition: border-color 0.15s;
+  }
+  .text-input:focus { border-color: #EC4899; }
+  .dt-input {
+    width: 100%; height: 36px; padding: 7px 10px;
+    border: 1px solid #e5e7eb; border-radius: 8px;
+    font-size: 13px; color: #1f2937; background: #fff;
+    outline: none; transition: border-color 0.15s;
+  }
+  .dt-input:focus { border-color: #EC4899; }
+  .presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .preset-btn {
+    height: 30px; border: 1px solid #e5e7eb; background: #fff;
+    border-radius: 6px; font-size: 12px; color: #4b5563;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .preset-btn:hover { border-color: #EC4899; color: #EC4899; background: #fdf2f8; }
+  .countdown-preview {
+    font-size: 12px; color: #EC4899; background: #fdf2f8;
+    padding: 6px 10px; border-radius: 6px; min-height: 24px;
+    display: flex; align-items: center;
+  }
+  .countdown-preview.muted { color: #9ca3af; background: #f9fafb; }
+  .footer {
+    display: flex; justify-content: flex-end; gap: 8px;
+    padding: 10px 18px 14px; border-top: 1px solid #f0f0f0;
+  }
+  .btn {
+    height: 32px; padding: 0 16px; border: none; border-radius: 8px;
+    font-size: 12px; cursor: pointer; transition: all 0.15s;
+  }
+  .btn-cancel { background: #f3f4f6; color: #6b7280; }
+  .btn-cancel:hover { background: #e5e7eb; }
+  .btn-confirm { background: #EC4899; color: #fff; }
+  .btn-confirm:hover { background: #db2777; }
+  .btn-confirm:disabled { background: #f9a8d4; cursor: not-allowed; }
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="header">
+    <div class="title">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+      设置定时提醒
+    </div>
+    <button class="close-btn" id="cancelX" title="取消">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+  <div class="body">
+    <div>
+      <div class="field-label">提醒标题</div>
+      <input class="text-input" id="titleInput" type="text" placeholder="输入提醒内容..." maxlength="60" />
+    </div>
+    <div>
+      <div class="field-label">提醒时间</div>
+      <input class="dt-input" id="datetimeInput" type="datetime-local" />
+    </div>
+    <div>
+      <div class="field-label">快速预设</div>
+      <div class="presets">
+        <button class="preset-btn" data-preset="5m">5 分钟后</button>
+        <button class="preset-btn" data-preset="15m">15 分钟后</button>
+        <button class="preset-btn" data-preset="30m">30 分钟后</button>
+        <button class="preset-btn" data-preset="1h">1 小时后</button>
+        <button class="preset-btn" data-preset="2h">2 小时后</button>
+        <button class="preset-btn" data-preset="tom9">明天 9:00</button>
+      </div>
+    </div>
+    <div class="countdown-preview muted" id="countdownPreview">请选择提醒时间</div>
+  </div>
+  <div class="footer">
+    <button class="btn btn-cancel" id="cancelBtn">取消</button>
+    <button class="btn btn-confirm" id="confirmBtn" disabled>确定</button>
+  </div>
+</div>
+<script>
+  const params = new URLSearchParams(window.location.search)
+  const titleInput = document.getElementById('titleInput')
+  const datetimeInput = document.getElementById('datetimeInput')
+  const countdownPreview = document.getElementById('countdownPreview')
+  const confirmBtn = document.getElementById('confirmBtn')
+
+  // 初始化
+  titleInput.value = params.get('title') || ''
+  const initTs = Number(params.get('datetime') || 0)
+  if (initTs > 0) {
+    datetimeInput.value = tsToLocalInput(initTs)
+  }
+
+  function tsToLocalInput(ts) {
+    const d = new Date(ts)
+    const pad = n => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  }
+
+  function localInputToTs(val) {
+    if (!val) return 0
+    return new Date(val).getTime()
+  }
+
+  function formatCountdown(ms) {
+    if (!Number.isFinite(ms) || ms <= 0) return null
+    const totalSec = Math.floor(ms / 1000)
+    const days = Math.floor(totalSec / 86400)
+    const hours = Math.floor((totalSec % 86400) / 3600)
+    const mins = Math.floor((totalSec % 3600) / 60)
+    const secs = totalSec % 60
+    if (days > 0) return `距提醒还有 ${days} 天 ${hours} 小时`
+    if (hours > 0) return `距提醒还有 ${hours} 小时 ${mins} 分`
+    if (mins > 0) return `距提醒还有 ${mins} 分 ${secs} 秒`
+    return `距提醒还有 ${secs} 秒`
+  }
+
+  function updatePreview() {
+    const ts = localInputToTs(datetimeInput.value)
+    const cd = formatCountdown(ts - Date.now())
+    if (cd) {
+      countdownPreview.textContent = cd
+      countdownPreview.classList.remove('muted')
+      confirmBtn.disabled = false
+    } else {
+      countdownPreview.textContent = '请选择未来的提醒时间'
+      countdownPreview.classList.add('muted')
+      confirmBtn.disabled = true
+    }
+  }
+
+  function applyPreset(preset) {
+    const now = new Date()
+    let target = new Date()
+    if (preset === '5m') target = new Date(now.getTime() + 5 * 60000)
+    else if (preset === '15m') target = new Date(now.getTime() + 15 * 60000)
+    else if (preset === '30m') target = new Date(now.getTime() + 30 * 60000)
+    else if (preset === '1h') target = new Date(now.getTime() + 60 * 60000)
+    else if (preset === '2h') target = new Date(now.getTime() + 120 * 60000)
+    else if (preset === 'tom9') {
+      target = new Date(now)
+      target.setDate(target.getDate() + 1)
+      target.setHours(9, 0, 0, 0)
+    }
+    datetimeInput.value = tsToLocalInput(target.getTime())
+    updatePreview()
+  }
+
+  // 事件绑定
+  datetimeInput.addEventListener('input', updatePreview)
+  document.querySelectorAll('.preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => applyPreset(btn.dataset.preset))
+  })
+  document.getElementById('cancelX').addEventListener('click', () => window.api.submitReminderSetup(null))
+  document.getElementById('cancelBtn').addEventListener('click', () => window.api.submitReminderSetup(null))
+  confirmBtn.addEventListener('click', () => {
+    const title = titleInput.value.trim() || '定时提醒'
+    const datetime = localInputToTs(datetimeInput.value)
+    if (!datetime || datetime <= Date.now()) return
+    window.api.submitReminderSetup({ title, datetime })
+  })
+
+  // 键盘
+  titleInput.addEventListener('keydown', e => { if (e.key === 'Enter') datetimeInput.focus() })
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') window.api.submitReminderSetup(null)
+    else if (e.key === 'Enter' && !confirmBtn.disabled) confirmBtn.click()
+  })
+
+  // 初始预览与聚焦
+  updatePreview()
+  if (!titleInput.value) titleInput.focus(); else datetimeInput.focus()
+  setInterval(updatePreview, 1000)
+</script>
+</body>
+</html>

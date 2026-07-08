@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>提醒</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; }
+  body { background: transparent; -webkit-user-select: none; user-select: none; }
+  .bar {
+    width: 100%; height: 100%;
+    background: rgba(31, 41, 55, 0.85);
+    backdrop-filter: blur(8px);
+    border-radius: 10px;
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 10px 0 12px;
+    color: #fff;
+    cursor: grab;
+    -webkit-app-region: no-drag;
+  }
+  .bar.dragging { cursor: grabbing; }
+  .bell { color: #f9a8d4; flex-shrink: 0; display: flex; }
+  .bell.ringing { animation: ring 1s ease-in-out infinite; }
+  @keyframes ring {
+    0%, 100% { transform: rotate(0); }
+    25% { transform: rotate(-12deg); }
+    75% { transform: rotate(12deg); }
+  }
+  .info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
+  .title { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .countdown { font-size: 11px; color: #f9a8d4; white-space: nowrap; }
+  .countdown.urgent { color: #fca5a5; }
+  .close-btn {
+    width: 20px; height: 20px; border: none; background: transparent;
+    color: #9ca3af; cursor: pointer; border-radius: 4px;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .close-btn:hover { background: rgba(255,255,255,0.15); color: #fff; }
+</style>
+</head>
+<body>
+<div class="bar" id="bar">
+  <div class="bell" id="bell">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+  </div>
+  <div class="info">
+    <div class="title" id="titleText">提醒</div>
+    <div class="countdown" id="countdownText">--</div>
+  </div>
+  <button class="close-btn" id="closeBtn" title="关闭">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+  </button>
+</div>
+<script>
+  const params = new URLSearchParams(window.location.search)
+  const barId = params.get('barId')
+  const itemId = params.get('itemId')
+  const title = params.get('title') || '提醒'
+  const datetime = Number(params.get('datetime') || 0)
+
+  document.getElementById('titleText').textContent = decodeURIComponent(title)
+  const countdownText = document.getElementById('countdownText')
+  const bell = document.getElementById('bell')
+
+  function formatCountdown(ms) {
+    if (ms <= 0) return '已到时间'
+    const totalSec = Math.floor(ms / 1000)
+    const days = Math.floor(totalSec / 86400)
+    const hours = Math.floor((totalSec % 86400) / 3600)
+    const mins = Math.floor((totalSec % 3600) / 60)
+    const secs = totalSec % 60
+    if (days > 0) return `${days}天${hours}小时后`
+    if (hours > 0) return `${hours}小时${mins}分后`
+    if (mins > 0) return `${mins}分${secs}秒后`
+    return `${secs}秒后`
+  }
+
+  function update() {
+    const remain = datetime - Date.now()
+    countdownText.textContent = formatCountdown(remain)
+    if (remain <= 0) {
+      bell.classList.add('ringing')
+      countdownText.classList.add('urgent')
+    } else if (remain < 60000) {
+      countdownText.classList.add('urgent')
+    }
+  }
+  update()
+  setInterval(update, 1000)
+
+  // 关闭
+  document.getElementById('closeBtn').addEventListener('click', e => {
+    e.stopPropagation()
+    window.api.closeReminderBar(barId)
+  })
+
+  // 拖动逻辑
+  const bar = document.getElementById('bar')
+  let dragging = false
+  let startX = 0, startY = 0, startWX = 0, startWY = 0
+
+  bar.addEventListener('pointerdown', e => {
+    if (e.target.closest('.close-btn')) return
+    dragging = true
+    startX = e.screenX; startY = e.screenY
+    startWX = window.screenX; startWY = window.screenY
+    bar.classList.add('dragging')
+    bar.setPointerCapture(e.pointerId)
+  })
+  bar.addEventListener('pointermove', e => {
+    if (!dragging) return
+    const dx = e.screenX - startX
+    const dy = e.screenY - startY
+    window.api.moveCurrentWindow(startWX + dx, startWY + dy)
+  })
+  bar.addEventListener('pointerup', e => {
+    if (!dragging) return
+    dragging = false
+    bar.classList.remove('dragging')
+    try { bar.releasePointerCapture(e.pointerId) } catch {}
+  })
+  bar.addEventListener('pointercancel', () => {
+    dragging = false
+    bar.classList.remove('dragging')
+  })
+</script>
+</body>
+</html>

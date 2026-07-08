@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>提醒</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; }
+  body { background: rgba(0,0,0,0.45); -webkit-user-select: none; user-select: none; display: flex; align-items: center; justify-content: center; }
+  .card {
+    background: #fff; border-radius: 16px;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.4);
+    padding: 32px 40px; min-width: 360px; max-width: 520px;
+    display: flex; flex-direction: column; align-items: center; gap: 16px;
+    animation: pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  @keyframes pop { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .bell-wrap {
+    width: 64px; height: 64px; border-radius: 50%;
+    background: #fdf2f8; display: flex; align-items: center; justify-content: center;
+    animation: ring 0.8s ease-in-out infinite;
+  }
+  @keyframes ring {
+    0%, 100% { transform: rotate(0); }
+    25% { transform: rotate(-15deg); }
+    75% { transform: rotate(15deg); }
+  }
+  .bell-wrap svg { color: #EC4899; }
+  .title { font-size: 20px; font-weight: 600; color: #1f2937; text-align: center; word-break: break-word; }
+  .time { font-size: 13px; color: #6b7280; }
+  .confirm-btn {
+    margin-top: 4px; height: 38px; padding: 0 28px;
+    border: none; border-radius: 10px; background: #EC4899; color: #fff;
+    font-size: 14px; cursor: pointer; transition: background 0.15s;
+  }
+  .confirm-btn:hover { background: #db2777; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="bell-wrap">
+    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+  </div>
+  <div class="title" id="titleText">提醒</div>
+  <div class="time" id="timeText"></div>
+  <button class="confirm-btn" id="confirmBtn">确认</button>
+</div>
+<script>
+  const params = new URLSearchParams(window.location.search)
+  const itemId = params.get('itemId')
+  const title = params.get('title') || '定时提醒'
+  const datetime = Number(params.get('datetime') || 0)
+  document.getElementById('titleText').textContent = decodeURIComponent(title)
+  if (datetime > 0) {
+    const d = new Date(datetime)
+    const pad = n => String(n).padStart(2, '0')
+    document.getElementById('timeText').textContent = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  }
+  function dismiss() { window.api.dismissReminder(itemId) }
+  document.getElementById('confirmBtn').addEventListener('click', dismiss)
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === 'Escape' || e.key === ' ') dismiss()
+  })
+</script>
+</body>
+</html>

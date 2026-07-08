@@ -1,0 +1,24 @@
+node_modules/
+dist/
+userdata/
+.electron-cache/
+*.log
+elog.txt
+main-loaded.txt
+screenshot.png
+
+# Electron 运行时二进制文件（打包产物，不提交）
+*.exe
+*.dll
+*.pak
+*.bin
+*.dat
+locales/
+
+# 临时/补丁脚本
+patch-renderer.js
+
+# 系统杂物
+Thumbs.db
+desktop.ini
+.DS_Store
