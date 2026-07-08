@@ -100,7 +100,8 @@ export default function App() {
         merged.items = saved.items || []
         merged.floatingItems = saved.floatingItems || []
         setConfig(merged)
-        setCollapsed(merged.window.collapsed)
+        // collapsed 不从 config 读取，每次启动默认展开，避免与窗口尺寸不同步导致白屏
+        setCollapsed(false)
         setAlwaysOnTop(merged.window.alwaysOnTop)
         if (merged.window.alwaysOnTop) {
           window.api.setAlwaysOnTop(true)
@@ -131,7 +132,8 @@ export default function App() {
     }
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = window.setTimeout(() => {
-      const toSave = { ...config, window: { ...config.window, collapsed, alwaysOnTop } }
+      // collapsed 是临时 UI 状态，不持久化到 config，避免重启后窗口尺寸/状态不同步导致白屏
+      const toSave = { ...config, window: { ...config.window, alwaysOnTop } }
       window.api.saveConfig(toSave)
     }, 500)
   }, [config, collapsed, alwaysOnTop, loaded])
@@ -154,7 +156,7 @@ export default function App() {
       merged.items = nextConfig.items || []
       merged.floatingItems = nextConfig.floatingItems || []
       setConfig(merged)
-      setCollapsed(merged.window.collapsed)
+      // collapsed 不从远程 config 同步，保持当前 UI 状态
       setAlwaysOnTop(merged.window.alwaysOnTop)
     })
     return () => off?.()

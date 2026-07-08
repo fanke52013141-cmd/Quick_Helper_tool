@@ -206,8 +206,13 @@ function createWindow() {
   log('Creating main window...')
   const config = getConfig()
   const winConfig = config.window || {}
+  // 启动时忽略折叠状态，始终以完整高度创建窗口，避免白屏
+  const safeWinConfig = { ...winConfig }
+  if (winConfig.height && winConfig.height < 120) {
+    safeWinConfig.height = 560
+  }
 
-  lastMainBounds = safeBounds(winConfig, { width: 416, height: 560 })
+  lastMainBounds = safeBounds(safeWinConfig, { width: 416, height: 560 })
   mainWindow = new BrowserWindow({
     ...lastMainBounds,
     frame: false,
@@ -765,6 +770,7 @@ ipcMain.handle('window:collapse', (event, collapsed) => {
     const nextBounds = keepBoundsInWorkArea({ x: bounds.x, y: bounds.y, width: bounds.width, height: 41 })
     win.setBounds(nextBounds)
     if (win === mainWindow) lastMainBounds = { ...nextBounds, height: win._savedHeight }
+    // 折叠时不保存 bounds 到 config，避免把 41px 高度持久化导致重启白屏
   } else {
     const nextBounds = keepBoundsInWorkArea({ x: bounds.x, y: bounds.y, width: bounds.width, height: win._savedHeight || 560 })
     win.setBounds(nextBounds)
