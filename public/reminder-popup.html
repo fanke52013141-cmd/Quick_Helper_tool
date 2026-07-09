@@ -50,7 +50,7 @@
   const itemId = params.get('itemId')
   const title = params.get('title') || '定时提醒'
   const datetime = Number(params.get('datetime') || 0)
-  document.getElementById('titleText').textContent = decodeURIComponent(title)
+  document.getElementById('titleText').textContent = title
   if (datetime > 0) {
     const d = new Date(datetime)
     const pad = n => String(n).padStart(2, '0')

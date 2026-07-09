@@ -58,7 +58,7 @@
   const title = params.get('title') || '提醒'
   const datetime = Number(params.get('datetime') || 0)
 
-  document.getElementById('titleText').textContent = decodeURIComponent(title)
+  document.getElementById('titleText').textContent = title
   const countdownText = document.getElementById('countdownText')
   const bell = document.getElementById('bell')
 

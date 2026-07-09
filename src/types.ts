@@ -189,3 +189,27 @@ export function genId(prefix: string = 'i'): string {
 export function validateUrl(url: string): boolean {
   return /^https?:\/\/.+/.test(url)
 }
+
+export function isHoldButton(item: GridItem | null): item is Extract<GridItem, { type: 'button' }> {
+  return !!item && item.type === 'button' && item.buttonType === 'hold'
+}
+
+export function parseTimerButton(content: string): { mode: 'countdown' | 'time'; delayMs: number; action: 'click' | 'doubleClick' } | null {
+  const [mode, hhRaw, mmRaw, ssRaw, action = 'click'] = content.split('|')
+  const hh = Number(hhRaw) || 0
+  const mm = Number(mmRaw) || 0
+  const ss = Number(ssRaw) || 0
+  let delay = 0
+  if (mode === 'countdown') {
+    delay = ((hh * 60 * 60) + (mm * 60) + ss) * 1000
+  } else if (mode === 'time') {
+    const target = new Date()
+    target.setHours(hh, mm, ss, 0)
+    if (target.getTime() < Date.now()) target.setDate(target.getDate() + 1)
+    delay = target.getTime() - Date.now()
+  } else {
+    return null
+  }
+  if (!Number.isFinite(delay) || delay <= 0) return null
+  return { mode, delayMs: delay, action: action === 'doubleClick' ? 'doubleClick' : 'click' }
+}

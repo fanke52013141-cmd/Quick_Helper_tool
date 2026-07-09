@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp, X } from 'lucide-react'
 import Card from './Card'
 import type { AppConfig, GridItem } from '../types'
+import { isHoldButton, parseTimerButton } from '../types'
 
 interface Props {
   config: AppConfig
@@ -21,10 +22,6 @@ interface DragGesture {
   ready: boolean
   armed: boolean
   dragging: boolean
-}
-
-function isHoldButton(item: GridItem | null): item is Extract<GridItem, { type: 'button' }> {
-  return !!item && item.type === 'button' && item.buttonType === 'hold'
 }
 
 export default function FloatingItemView({ config, floatingId, onConfigChange, onClose }: Props) {
@@ -213,25 +210,14 @@ export default function FloatingItemView({ config, floatingId, onConfigChange, o
       } else if (item.buttonType === 'shortcut') {
         await window.api.pressShortcut(item.content)
       } else if (item.buttonType === 'timer') {
-        const [mode, hhRaw, mmRaw, ssRaw, action = 'click'] = item.content.split('|')
-        const hh = Number(hhRaw) || 0
-        const mm = Number(mmRaw) || 0
-        const ss = Number(ssRaw) || 0
-        let delay = 0
-        if (mode === 'countdown') delay = ((hh * 60 * 60) + (mm * 60) + ss) * 1000
-        else if (mode === 'time') {
-          const target = new Date()
-          target.setHours(hh, mm, ss, 0)
-          if (target.getTime() < Date.now()) target.setDate(target.getDate() + 1)
-          delay = target.getTime() - Date.now()
-        }
-        if (delay > 0) {
-          const endAt = Date.now() + delay
+        const parsed = parseTimerButton(item.content)
+        if (parsed) {
+          const endAt = Date.now() + parsed.delayMs
           setTimerEnd(endAt)
           window.setTimeout(() => {
             setTimerEnd(null)
-            action === 'doubleClick' ? window.api.doubleClick() : window.api.click()
-          }, delay)
+            parsed.action === 'doubleClick' ? window.api.doubleClick() : window.api.click()
+          }, parsed.delayMs)
         }
       }
     }

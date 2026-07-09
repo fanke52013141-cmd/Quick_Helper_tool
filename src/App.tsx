@@ -14,11 +14,7 @@ import {
 } from './components/Dialogs'
 import FloatingItemView from './components/FloatingItemView'
 import type { AppConfig, GridItem, ButtonType, LinkRef, TodoGroup, CardSize } from './types'
-import { DEFAULT_CONFIG, genId } from './types'
-
-function isHoldButton(item: GridItem): item is Extract<GridItem, { type: 'button' }> {
-  return item.type === 'button' && item.buttonType === 'hold'
-}
+import { DEFAULT_CONFIG, genId, isHoldButton, parseTimerButton } from './types'
 
 // ======================== 可排序卡片包装 ========================
 function SortableCard(props: {
@@ -534,30 +530,12 @@ export default function App() {
   }
 
   const runTimerButton = (item: Extract<GridItem, { type: 'button' }>) => {
-    const [mode, hhRaw, mmRaw, ssRaw, action = 'click'] = item.content.split('|')
-    const hh = Number(hhRaw) || 0
-    const mm = Number(mmRaw) || 0
-    const ss = Number(ssRaw) || 0
-    let delay = 0
-
-    if (mode === 'countdown') {
-      delay = ((hh * 60 * 60) + (mm * 60) + ss) * 1000
-    } else if (mode === 'time') {
-      const target = new Date()
-      target.setHours(hh, mm, ss, 0)
-      if (target.getTime() < Date.now()) target.setDate(target.getDate() + 1)
-      delay = target.getTime() - Date.now()
-    } else {
+    const parsed = parseTimerButton(item.content)
+    if (!parsed) {
       showToast('定时配置错误')
       return
     }
-
-    if (!Number.isFinite(delay) || delay <= 0) {
-      showToast('定时配置错误')
-      return
-    }
-
-    const endAt = Date.now() + delay
+    const endAt = Date.now() + parsed.delayMs
     setTimerEnds(prev => ({ ...prev, [item.id]: endAt }))
     showToast(`已设置：${item.title}`)
     window.setTimeout(() => {
@@ -566,9 +544,9 @@ export default function App() {
         delete next[item.id]
         return next
       })
-      if (action === 'doubleClick') window.api.doubleClick()
+      if (parsed.action === 'doubleClick') window.api.doubleClick()
       else window.api.click()
-    }, delay)
+    }, parsed.delayMs)
   }
 
   const handleButtonAction = async (item: Extract<GridItem, { type: 'button' }>) => {
@@ -604,7 +582,7 @@ export default function App() {
 
   // ======================== 导入导出 ========================
   const handleExport = async () => {
-    const toExport = { ...config, window: { ...config.window, collapsed, alwaysOnTop } }
+    const toExport = { ...config, window: { ...config.window, alwaysOnTop } }
     const ok = await window.api.exportConfig(toExport)
     showToast(ok ? '导出成功' : '已取消')
   }

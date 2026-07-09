@@ -4,8 +4,10 @@ userdata/
 .electron-cache/
 *.log
 elog.txt
-main-loaded.txt
 screenshot.png
+
+# Electron 打包产物部署目录（exe 运行时加载的代码，非源码）
+resources/
 
 # Electron 运行时二进制文件（打包产物，不提交）
 *.exe

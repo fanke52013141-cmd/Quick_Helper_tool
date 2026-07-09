@@ -16,6 +16,11 @@ if (!window.api && import.meta.env.DEV) {
     exportConfig: async () => true,
     getBounds: async () => null,
     closeFloating: async () => true,
+    openReminderSetup: async () => null,
+    submitReminderSetup: () => undefined,
+    createReminderBar: async () => undefined,
+    closeReminderBar: async () => true,
+    dismissReminder: async () => true,
     onConfigChanged: () => () => undefined,
   } as Partial<Window['api']>, {
     get(target, property) {
