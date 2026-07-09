@@ -148,6 +148,21 @@ function keepBoundsInWorkArea(bounds) {
   }
 }
 
+// 强制窗口重绘，修复最小化/恢复后白屏问题
+function repaintWindow(win) {
+  if (!win || win.isDestroyed()) return
+  try {
+    win.webContents.invalidate()
+  } catch {}
+  // 双保险：微调高度 1px 再调回来，强制触发 resize → DOM 重排重绘
+  const bounds = win.getBounds()
+  win.setBounds({ ...bounds, height: bounds.height + 1 })
+  setTimeout(() => {
+    if (!win || win.isDestroyed()) return
+    win.setBounds(bounds)
+  }, 0)
+}
+
 function defaultFloatingBounds(width, height) {
   const workArea = screen.getPrimaryDisplay().workArea
   return {
@@ -225,6 +240,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      backgroundThrottling: false,
     },
   })
 
@@ -246,6 +262,8 @@ function createWindow() {
     setTimeout(() => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setFocusable(false)
     }, 100)
+    // 修复最小化恢复后白屏：强制 webContents 重绘
+    repaintWindow(mainWindow)
   })
   mainWindow.on('closed', () => { mainWindow = null })
 }
@@ -606,11 +624,14 @@ if (!gotLock) {
       if (mainWindow.isMinimized()) mainWindow.restore()
       mainWindow.setAlwaysOnTop(true)
       mainWindow.focus()
+      // 修复从任务栏/快捷方式恢复后白屏
+      repaintWindow(mainWindow)
       setTimeout(() => {
         if (mainWindow && !mainWindow.isDestroyed()) {
           const config = getConfig()
           mainWindow.setAlwaysOnTop(!!config.window.alwaysOnTop)
           mainWindow.setFocusable(false)
+          repaintWindow(mainWindow)
         }
       }, 300)
     } else {
