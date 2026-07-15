@@ -207,8 +207,10 @@ function saveFloatingBoundsDebounced(floatingId, win) {
     const bounds = win.getBounds()
     const sourceFloating = config.floatingItems.find(item => item.id === floatingId)
     const sourceItem = config.items.find(item => item.id === sourceFloating?.itemId)
-    const cardSize = getFloatingCardSize(config)
-    const nextBounds = sourceItem?.type === 'todo' ? bounds : { x: bounds.x, y: bounds.y, ...cardSize }
+    // todo 和 reminder 类型保存实际 bounds；普通悬浮窗只存位置，尺寸由 cardSize 决定
+    const nextBounds = sourceItem && (sourceItem.type === 'todo' || sourceItem.type === 'reminder')
+      ? bounds
+      : { x: bounds.x, y: bounds.y, ...getFloatingCardSize(config) }
     config.floatingItems = config.floatingItems.map(item => (
       item.id === floatingId ? { ...item, bounds: nextBounds } : item
     ))
@@ -257,11 +259,6 @@ function createWindow() {
   mainWindow.on('move', saveMainBoundsDebounced)
   mainWindow.on('restore', () => {
     if (lastMainBounds) mainWindow.setBounds(keepBoundsInWorkArea(lastMainBounds))
-    // 最小化前会临时启用 focusable，以便 Windows 使用标准任务栏行为；
-    // 恢复后重新进入“不抢输入焦点”的工具窗口模式。
-    setTimeout(() => {
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setFocusable(false)
-    }, 100)
     // 修复最小化恢复后白屏：强制 webContents 重绘
     repaintWindow(mainWindow)
   })
@@ -419,12 +416,13 @@ function createReminderBarWindow(floatingItem) {
     ...bounds,
     frame: false, transparent: true, backgroundColor: '#00000000',
     resizable: false, focusable: false, maximizable: false,
-    alwaysOnTop: true, skipTaskbar: true, hasShadow: true,
+    alwaysOnTop: true, skipTaskbar: true, hasShadow: false,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
   })
   reminderBarWindows.set(barId, win)
   win.setAlwaysOnTop(true, 'floating')
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  win.setMinimumSize(width, height)
   win.setMaximumSize(width, height)
   win.on('resize', () => {
     if (win.isDestroyed()) return
@@ -630,7 +628,6 @@ if (!gotLock) {
         if (mainWindow && !mainWindow.isDestroyed()) {
           const config = getConfig()
           mainWindow.setAlwaysOnTop(!!config.window.alwaysOnTop)
-          mainWindow.setFocusable(false)
           repaintWindow(mainWindow)
         }
       }, 300)

@@ -104,11 +104,6 @@ export default function App() {
         }
       }
       setLoaded(true)
-      // 主工具窗口不抢占当前应用的输入焦点，点击文字/快捷键卡片时
-      // 动作会继续发送到用户原本正在操作的窗口。
-      if (!isFloatingMode && !isDialogMode) {
-        await window.api.setFocusable(false)
-      }
     })()
   }, [isFloatingMode, isDialogMode])
 
@@ -356,9 +351,7 @@ export default function App() {
   }
 
   const openTodoPanel = async (item: Extract<GridItem, { type: 'todo' }>) => {
-    const result = await openDialog<{ groups: TodoGroup[] }>({ dialogType: 'todoPanel', item })
-    if (!result) return
-    updateItem(item.id, { groups: result.groups } as any)
+    await openDialog<{ groups: TodoGroup[] }>({ dialogType: 'todoPanel', item })
   }
 
   const openButtonEditor = async (payload: { buttonType?: ButtonType; item?: { title: string; buttonType: ButtonType; content: string; autoEnter?: boolean } }) => {
@@ -659,7 +652,7 @@ export default function App() {
           <TodoPanelDialog
             item={dialogPayload.item}
             onClose={() => window.api.cancelDialog()}
-            onSave={(groups: TodoGroup[]) => window.api.submitDialog({ groups })}
+            onChange={(groups: TodoGroup[]) => updateItem(dialogPayload.item.id, { groups } as any)}
           />
         )}
       </div>

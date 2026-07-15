@@ -96,11 +96,14 @@
       <div class="field-label">快速预设</div>
       <div class="presets">
         <button class="preset-btn" data-preset="5m">5 分钟后</button>
+        <button class="preset-btn" data-preset="10m">10 分钟后</button>
         <button class="preset-btn" data-preset="15m">15 分钟后</button>
+        <button class="preset-btn" data-preset="20m">20 分钟后</button>
         <button class="preset-btn" data-preset="30m">30 分钟后</button>
+        <button class="preset-btn" data-preset="40m">40 分钟后</button>
         <button class="preset-btn" data-preset="1h">1 小时后</button>
+        <button class="preset-btn" data-preset="1.5h">1 个半小时后</button>
         <button class="preset-btn" data-preset="2h">2 小时后</button>
-        <button class="preset-btn" data-preset="tom9">明天 9:00</button>
       </div>
     </div>
     <div class="countdown-preview muted" id="countdownPreview">请选择提醒时间</div>
@@ -166,15 +169,14 @@
     const now = new Date()
     let target = new Date()
     if (preset === '5m') target = new Date(now.getTime() + 5 * 60000)
+    else if (preset === '10m') target = new Date(now.getTime() + 10 * 60000)
     else if (preset === '15m') target = new Date(now.getTime() + 15 * 60000)
+    else if (preset === '20m') target = new Date(now.getTime() + 20 * 60000)
     else if (preset === '30m') target = new Date(now.getTime() + 30 * 60000)
+    else if (preset === '40m') target = new Date(now.getTime() + 40 * 60000)
     else if (preset === '1h') target = new Date(now.getTime() + 60 * 60000)
+    else if (preset === '1.5h') target = new Date(now.getTime() + 90 * 60000)
     else if (preset === '2h') target = new Date(now.getTime() + 120 * 60000)
-    else if (preset === 'tom9') {
-      target = new Date(now)
-      target.setDate(target.getDate() + 1)
-      target.setHours(9, 0, 0, 0)
-    }
     datetimeInput.value = tsToLocalInput(target.getTime())
     updatePreview()
   }

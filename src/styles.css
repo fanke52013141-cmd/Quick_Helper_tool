@@ -684,6 +684,12 @@ input, textarea {
   color: var(--muted);
 }
 
+.todo-entry:focus {
+  outline: none;
+  background: rgba(77, 145, 247, 0.07);
+  border-radius: 6px;
+}
+
 .todo-checkbox {
   width: 16px;
   height: 16px;

@@ -6,13 +6,14 @@ import { genId, validateUrl } from '../types'
 interface DialogShellProps {
   title: string
   onClose: () => void
-  onSave: () => void
+  onSave?: () => void
   children: React.ReactNode
   saveLabel?: string
   className?: string
+  hideFooter?: boolean
 }
 
-function DialogShell({ title, onClose, onSave, children, saveLabel = '保存', className = '' }: DialogShellProps) {
+function DialogShell({ title, onClose, onSave, children, saveLabel = '保存', className = '', hideFooter = false }: DialogShellProps) {
   const dialogRef = useRef<HTMLDivElement>(null)
 
   useLayoutEffect(() => {
@@ -46,10 +47,12 @@ function DialogShell({ title, onClose, onSave, children, saveLabel = '保存', c
           </button>
         </div>
         <div className="dialog-body">{children}</div>
-        <div className="dialog-footer">
-          <button className="btn" onClick={onClose}>取消</button>
-          <button className="btn btn-primary" onClick={onSave}>{saveLabel}</button>
-        </div>
+        {!hideFooter && (
+          <div className="dialog-footer">
+            <button className="btn" onClick={onClose}>取消</button>
+            <button className="btn btn-primary" onClick={onSave!}>{saveLabel}</button>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -338,13 +341,23 @@ export function TodoNameDialog({ name, onClose, onSave }: TodoNameDialogProps) {
 interface TodoPanelProps {
   item: Extract<GridItem, { type: 'todo' }>
   onClose: () => void
-  onSave: (groups: TodoGroup[]) => void
+  onChange: (groups: TodoGroup[]) => void
 }
 
-export function TodoPanelDialog({ item, onClose, onSave }: TodoPanelProps) {
+export function TodoPanelDialog({ item, onClose, onChange }: TodoPanelProps) {
   const [groups, setGroups] = useState<TodoGroup[]>(item.groups.length > 0 ? JSON.parse(JSON.stringify(item.groups)) : [{ id: genId('g'), name: '默认分组', todos: [] }])
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null)
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null)
+  const firstRender = useRef(true)
+
+  // 实时保存：groups 变化时立即同步到主配置
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false
+      return
+    }
+    onChange(groups)
+  }, [groups])
 
   const addGroup = () => {
     const id = genId('g')
@@ -363,9 +376,9 @@ export function TodoPanelDialog({ item, onClose, onSave }: TodoPanelProps) {
     setEditingGroupId(null)
   }
 
-  const addTodo = (gid: string) => {
+  const addTodoAndEdit = (gid: string) => {
     const tid = genId('t')
-    setGroups(prev => prev.map(g => g.id === gid ? { ...g, todos: [...g.todos, { id: tid, text: '新待办', completed: false }] } : g))
+    setGroups(prev => prev.map(g => g.id === gid ? { ...g, todos: [...g.todos, { id: tid, text: '', completed: false }] } : g))
     setEditingTodoId(tid)
   }
 
@@ -377,17 +390,19 @@ export function TodoPanelDialog({ item, onClose, onSave }: TodoPanelProps) {
     setGroups(prev => prev.map(g => g.id === gid ? { ...g, todos: g.todos.map(t => t.id === tid ? { ...t, completed: !t.completed } : t) } : g))
   }
 
-  const editTodo = (gid: string, tid: string, text: string) => {
-    setGroups(prev => prev.map(g => g.id === gid ? { ...g, todos: g.todos.map(t => t.id === tid ? { ...t, text } : t) } : g))
+  // 保存待办文本：空内容自动删除，避免遗留空条目
+  const saveTodo = (gid: string, tid: string, text: string) => {
+    const trimmed = text.trim()
+    setGroups(prev => prev.map(g => g.id === gid
+      ? { ...g, todos: trimmed
+        ? g.todos.map(t => t.id === tid ? { ...t, text: trimmed } : t)
+        : g.todos.filter(t => t.id !== tid) }
+      : g))
     setEditingTodoId(null)
   }
 
-  const handleSave = () => {
-    onSave(groups)
-  }
-
   return (
-    <DialogShell title={item.title} className="todo-panel" onClose={onClose} onSave={handleSave}>
+    <DialogShell title={item.title} className="todo-panel" onClose={onClose} hideFooter>
       <div className="todo-groups">
         {groups.map(group => (
           <div key={group.id} className="todo-group">
@@ -406,14 +421,27 @@ export function TodoPanelDialog({ item, onClose, onSave }: TodoPanelProps) {
               </div>
             </div>
             {group.todos.map(todo => (
-              <div key={todo.id} className={`todo-entry ${todo.completed ? 'completed' : ''}`}>
+              <div
+                key={todo.id}
+                tabIndex={0}
+                className={`todo-entry ${todo.completed ? 'completed' : ''}`}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    addTodoAndEdit(group.id)
+                  }
+                }}
+              >
                 <div className={`todo-checkbox ${todo.completed ? 'checked' : ''}`} onClick={() => toggleTodo(group.id, todo.id)}>
                   {todo.completed && '✓'}
                 </div>
                 {editingTodoId === todo.id ? (
                   <input className="todo-text-input" defaultValue={todo.text}
-                    autoFocus onBlur={(e) => editTodo(group.id, todo.id, e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingTodoId(null) }} />
+                    autoFocus onBlur={(e) => saveTodo(group.id, todo.id, e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); saveTodo(group.id, todo.id, (e.target as HTMLInputElement).value) }
+                      if (e.key === 'Escape') setEditingTodoId(null)
+                    }} />
                 ) : (
                   <span className="todo-text" onDoubleClick={() => setEditingTodoId(todo.id)}>{todo.text}</span>
                 )}
@@ -424,7 +452,7 @@ export function TodoPanelDialog({ item, onClose, onSave }: TodoPanelProps) {
                 </div>
               </div>
             ))}
-            <div className="todo-add-btn" onClick={() => addTodo(group.id)}>
+            <div className="todo-add-btn" onClick={() => addTodoAndEdit(group.id)}>
               <Plus size={12} /> 添加待办
             </div>
           </div>
