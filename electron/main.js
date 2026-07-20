@@ -163,6 +163,25 @@ function repaintWindow(win) {
   }, 0)
 }
 
+// 固定窗口尺寸防护：跨屏 DPI 变化时 debounced 恢复，避免循环 resize 把窗口撑大
+function lockWindowSize(win, width, height) {
+  let timer = null
+  let isResizing = false
+  win.on('resize', () => {
+    if (win.isDestroyed() || isResizing) return
+    const [cw, ch] = win.getSize()
+    if (cw === width && ch === height) return
+    clearTimeout(timer)
+    timer = setTimeout(() => {
+      if (win.isDestroyed()) return
+      isResizing = true
+      const b = win.getBounds()
+      win.setBounds({ x: b.x, y: b.y, width, height })
+      setTimeout(() => { isResizing = false }, 50)
+    }, 50)
+  })
+}
+
 function defaultFloatingBounds(width, height) {
   const workArea = screen.getPrimaryDisplay().workArea
   return {
@@ -321,14 +340,8 @@ function createFloatingWindow(floatingItem) {
 
   win.setMinimumSize(isTodo ? 220 : cardSize.width, isTodo ? 44 : cardSize.height)
   if (!isTodo) {
-    // 双保险：若 Aero Snap 仍触发 resize，立即恢复固定尺寸
-    win.on('resize', () => {
-      if (win.isDestroyed()) return
-      const [cw, ch] = win.getSize()
-      if (cw !== cardSize.width || ch !== cardSize.height) {
-        win.setSize(cardSize.width, cardSize.height)
-      }
-    })
+    // 双保险：若 Aero Snap 或跨屏 DPI 变化触发 resize，debounced 恢复固定尺寸
+    lockWindowSize(win, cardSize.width, cardSize.height)
   }
   win.on('resize', () => saveFloatingBoundsDebounced(floatingItem.id, win))
   win.on('move', () => saveFloatingBoundsDebounced(floatingItem.id, win))
@@ -424,11 +437,7 @@ function createReminderBarWindow(floatingItem) {
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   win.setMinimumSize(width, height)
   win.setMaximumSize(width, height)
-  win.on('resize', () => {
-    if (win.isDestroyed()) return
-    const [cw, ch] = win.getSize()
-    if (cw !== width || ch !== height) win.setSize(width, height)
-  })
+  lockWindowSize(win, width, height)
   win.on('move', () => saveFloatingBoundsDebounced(barId, win))
   const query = { barId, itemId: sourceItem.id, title: sourceItem.title || '', datetime: String(sourceItem.datetime || 0) }
   win.loadFile(path.join(__dirname, '..', 'dist', 'reminder-bar.html'), { query })
